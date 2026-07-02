@@ -15,8 +15,10 @@
     font-family:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
     color:#fff;
   }
-  .wrap{max-width:920px;margin:0 auto;padding:40px 24px 80px;}
+  .wrap{max-width:960px;margin:0 auto;padding:40px 24px 80px;}
   h1{font-size:22px;font-weight:700;margin:0 0 4px;}
+  h2{font-size:15px;margin:0 0 16px;}
+  h3{font-size:13px;color:var(--menthe);text-transform:uppercase;letter-spacing:.5px;margin:20px 0 10px;}
   .sub{color:var(--menthe);font-size:13px;opacity:.8;margin:0 0 32px;}
   .card{
     background:rgba(255,255,255,0.04);border:1px solid rgba(93,226,152,0.15);
@@ -44,6 +46,7 @@
   th,td{text-align:left;padding:10px 8px;font-size:13px;border-bottom:1px solid rgba(255,255,255,0.08);vertical-align:top;}
   th{color:var(--menthe);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.5px;}
   .rp-list{font-size:12.5px;color:rgba(255,255,255,0.75);line-height:1.6;}
+  .override-tag{display:inline-block;font-size:10.5px;font-weight:600;color:var(--saumon);background:rgba(232,155,119,0.12);padding:1px 6px;border-radius:4px;margin-right:6px;}
   .actions{display:flex;gap:8px;}
   .err{color:var(--saumon);font-size:13px;margin-top:-6px;margin-bottom:14px;min-height:16px;}
   .hint{font-size:12px;color:rgba(255,255,255,0.45);margin-top:24px;line-height:1.6;}
@@ -51,6 +54,12 @@
   #gate{display:flex;align-items:center;justify-content:center;min-height:100vh;}
   #gate .card{width:340px;}
   .pill{display:inline-block;font-size:11px;padding:2px 8px;border-radius:100px;background:rgba(93,226,152,0.15);color:var(--menthe);margin-left:8px;}
+  .titre-block{border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:12px 14px;margin-bottom:10px;}
+  .titre-toggle{display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;}
+  .titre-toggle input[type=checkbox]{width:auto;margin:0;accent-color:var(--menthe);}
+  .titre-toggle span{font-size:13px;font-weight:600;color:#fff;}
+  .titre-rows{margin-top:12px;display:none;}
+  .titre-rows.open{display:block;}
 </style>
 </head>
 <body>
@@ -68,25 +77,30 @@
 
 <div class="wrap" id="dash" style="display:none">
   <h1>Campus / Responsables Pédagogiques<span class="pill">admin</span></h1>
-  <p class="sub">Chaque modification est immédiate — les 18 PAC et les 4 portails lisent cette table en direct, sans redéploiement.</p>
+  <p class="sub">Chaque modification est immédiate — les 18 PAC et les 4 portails lisent cette table en direct, sans redéploiement. Un campus a un RP par défaut, avec possibilité d'exception par titre (ex: Le Mans géré différemment en MSMC).</p>
 
   <div class="card">
-    <h2 style="font-size:15px;margin:0 0 16px;" id="form-title">Ajouter un campus</h2>
+    <h2 id="form-title">Ajouter un campus</h2>
     <input type="hidden" id="f-original-id">
     <label for="f-label">Nom du campus</label>
     <input id="f-label" placeholder="ex: Lyon">
-    <label>Responsable(s) pédagogique(s)</label>
-    <div id="rp-rows"></div>
-    <button class="btn-ghost btn-small" onclick="addRpRow()">+ Ajouter un RP</button>
-    <div class="err" id="form-err"></div>
-    <div class="actions" style="margin-top:16px">
+
+    <h3>RP par défaut (s'applique à tous les titres, sauf exception ci-dessous)</h3>
+    <div id="rp-default-rows"></div>
+    <button class="btn-ghost btn-small" onclick="addRow('rp-default-rows')">+ Ajouter un RP</button>
+
+    <h3>Exceptions par titre</h3>
+    <div id="titre-blocks"></div>
+
+    <div class="err" id="form-err" style="margin-top:16px"></div>
+    <div class="actions" style="margin-top:8px">
       <button class="btn-primary" onclick="saveCampus()">Enregistrer</button>
       <button class="btn-ghost" id="cancel-edit" style="display:none" onclick="resetForm()">Annuler la modification</button>
     </div>
   </div>
 
   <div class="card">
-    <h2 style="font-size:15px;margin:0 0 8px;">Campus actuels</h2>
+    <h2>Campus actuels</h2>
     <table>
       <thead><tr><th>Campus</th><th>RP (CC portfolio)</th><th></th></tr></thead>
       <tbody id="campus-tbody"></tbody>
@@ -95,11 +109,13 @@
 
   <div class="hint">
     Endpoint public (lu par les 18 PAC + 4 portails) : <code id="public-url"></code><br>
-    Toute nouvelle entrée est disponible immédiatement, sans redéploiement d'aucun repo.
+    Ajouter <code>?titre=MSMC</code> (ou CDRH / MMD / MDO) résout automatiquement les exceptions.<br>
+    Toute modification est disponible immédiatement, sans redéploiement d'aucun repo.
   </div>
 </div>
 
 <script>
+const TITRES = ['MSMC', 'CDRH', 'MMD', 'MDO'];
 let PASSWORD = '';
 let CAMPUSES = [];
 
@@ -122,21 +138,29 @@ function login(){
     .catch(err => { document.getElementById('gate-err').textContent = err.message; });
 }
 
-// Reprise de session si le mot de passe est déjà en mémoire d'onglet
 (function tryAutoLogin(){
   const saved = sessionStorage.getItem('campusrp_pw');
   if (saved) { document.getElementById('pw').value = saved; login(); }
 })();
+
+function escapeHtml(s){
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 
 function renderTable(){
   const tbody = document.getElementById('campus-tbody');
   tbody.innerHTML = '';
   CAMPUSES.slice().sort((a,b) => a.label.localeCompare(b.label)).forEach(c => {
     const tr = document.createElement('tr');
-    const rpHtml = (c.rp || []).map(p => escapeHtml(p.nom || '(sans nom)') + ' — ' + escapeHtml(p.email)).join('<br>');
+    const defaultHtml = (c.rp_default || []).map(p => escapeHtml(p.nom || '(sans nom)') + ' — ' + escapeHtml(p.email)).join('<br>');
+    const overridesHtml = Object.keys(c.rp_overrides || {}).map(titre => {
+      const list = c.rp_overrides[titre].map(p => escapeHtml(p.nom || '(sans nom)') + ' — ' + escapeHtml(p.email)).join(', ');
+      return '<div style="margin-top:6px"><span class="override-tag">' + titre + '</span>' + list + '</div>';
+    }).join('');
     tr.innerHTML =
       '<td><strong>' + escapeHtml(c.label) + '</strong><br><span style="opacity:.4;font-size:11px">' + escapeHtml(c.id) + '</span></td>' +
-      '<td class="rp-list">' + rpHtml + '</td>' +
+      '<td class="rp-list">' + defaultHtml + overridesHtml + '</td>' +
       '<td class="actions">' +
         '<button class="btn-ghost btn-small" onclick="editCampus(\'' + c.id + '\')">Éditer</button>' +
         '<button class="btn-danger btn-small" onclick="deleteCampus(\'' + c.id + '\')">Supprimer</button>' +
@@ -148,13 +172,8 @@ function renderTable(){
   }
 }
 
-function escapeHtml(s){
-  return String(s == null ? '' : s)
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-function addRpRow(nom, email){
-  const wrap = document.getElementById('rp-rows');
+function addRow(containerId, nom, email){
+  const wrap = document.getElementById(containerId);
   const row = document.createElement('div');
   row.className = 'rp-row';
   row.innerHTML =
@@ -164,14 +183,43 @@ function addRpRow(nom, email){
   wrap.appendChild(row);
 }
 
+function buildTitreBlocks(overridesByTitre){
+  const wrap = document.getElementById('titre-blocks');
+  wrap.innerHTML = '';
+  TITRES.forEach(titre => {
+    const hasOverride = overridesByTitre && overridesByTitre[titre] && overridesByTitre[titre].length > 0;
+    const block = document.createElement('div');
+    block.className = 'titre-block';
+    block.innerHTML =
+      '<label class="titre-toggle">' +
+        '<input type="checkbox" id="toggle-' + titre + '" ' + (hasOverride ? 'checked' : '') + ' onchange="toggleTitre(\'' + titre + '\')">' +
+        '<span>' + titre + ' — RP différent du défaut</span>' +
+      '</label>' +
+      '<div class="titre-rows' + (hasOverride ? ' open' : '') + '" id="rows-' + titre + '"></div>';
+    wrap.appendChild(block);
+
+    if (hasOverride) {
+      overridesByTitre[titre].forEach(p => addRow('rows-' + titre, p.nom, p.email));
+    }
+  });
+}
+
+function toggleTitre(titre){
+  const checked = document.getElementById('toggle-' + titre).checked;
+  const rows = document.getElementById('rows-' + titre);
+  rows.classList.toggle('open', checked);
+  if (checked && rows.children.length === 0) addRow('rows-' + titre);
+}
+
 function resetForm(){
   document.getElementById('form-title').textContent = 'Ajouter un campus';
   document.getElementById('f-original-id').value = '';
   document.getElementById('f-label').value = '';
-  document.getElementById('rp-rows').innerHTML = '';
+  document.getElementById('rp-default-rows').innerHTML = '';
   document.getElementById('form-err').textContent = '';
   document.getElementById('cancel-edit').style.display = 'none';
-  addRpRow();
+  addRow('rp-default-rows');
+  buildTitreBlocks({});
 }
 
 function editCampus(id){
@@ -180,30 +228,47 @@ function editCampus(id){
   document.getElementById('form-title').textContent = 'Modifier « ' + c.label + ' »';
   document.getElementById('f-original-id').value = c.id;
   document.getElementById('f-label').value = c.label;
-  document.getElementById('rp-rows').innerHTML = '';
-  (c.rp || []).forEach(p => addRpRow(p.nom, p.email));
-  if ((c.rp || []).length === 0) addRpRow();
+  document.getElementById('rp-default-rows').innerHTML = '';
+  (c.rp_default || []).forEach(p => addRow('rp-default-rows', p.nom, p.email));
+  if ((c.rp_default || []).length === 0) addRow('rp-default-rows');
+  buildTitreBlocks(c.rp_overrides || {});
   document.getElementById('cancel-edit').style.display = 'inline-block';
   window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function collectRows(containerId){
+  return Array.from(document.querySelectorAll('#' + containerId + ' .rp-row')).map(row => ({
+    nom: row.querySelector('.rp-nom').value.trim(),
+    email: row.querySelector('.rp-email').value.trim(),
+  })).filter(p => p.email);
 }
 
 function saveCampus(){
   const label = document.getElementById('f-label').value.trim();
   const originalId = document.getElementById('f-original-id').value;
-  const rp = Array.from(document.querySelectorAll('.rp-row')).map(row => ({
-    nom: row.querySelector('.rp-nom').value.trim(),
-    email: row.querySelector('.rp-email').value.trim(),
-  })).filter(p => p.email);
+  const rp_default = collectRows('rp-default-rows');
+
+  const rp_overrides = {};
+  TITRES.forEach(titre => {
+    const checked = document.getElementById('toggle-' + titre).checked;
+    if (checked) {
+      const list = collectRows('rows-' + titre);
+      if (list.length > 0) rp_overrides[titre] = list;
+    }
+  });
 
   const errEl = document.getElementById('form-err');
   errEl.textContent = '';
   if (!label) { errEl.textContent = 'Le nom du campus est requis.'; return; }
-  if (rp.length === 0) { errEl.textContent = 'Au moins un RP (avec email) est requis.'; return; }
+  if (rp_default.length === 0) { errEl.textContent = 'Au moins un RP par défaut (avec email) est requis.'; return; }
+  for (const titre of Object.keys(rp_overrides)) {
+    if (rp_overrides[titre].length === 0) { errEl.textContent = titre + ' : coche activée mais aucun RP renseigné.'; return; }
+  }
 
   fetch('/api/admin', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-admin-password': PASSWORD },
-    body: JSON.stringify({ id: originalId || label, label, rp }),
+    body: JSON.stringify({ id: originalId || label, label, rp_default, rp_overrides }),
   })
     .then(r => r.json().then(data => { if (!r.ok) throw new Error(data.error || 'Erreur'); return data; }))
     .then(data => { CAMPUSES = data.campuses; renderTable(); resetForm(); })

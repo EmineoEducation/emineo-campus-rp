@@ -1,41 +1,49 @@
-# emineo-campus-rp — Hub Campus / RP
+# emineo-campus-rp — Hub Campus / RP (v2 — support par titre)
 
 Source de vérité unique pour le mapping campus → responsables pédagogiques,
-lue par les 18 PAC (`api/send-portfolio.js`) et les 4 portails titre
-(déroulante campus). Remplace les listes codées en dur dans 22 fichiers.
+lue par les 18 PAC (`api/send-portfolio.js`) et les 4 portails titre.
 
-## Déploiement (une seule fois)
+**Nouveau dans cette version :** un campus a un RP « par défaut », et peut
+avoir des **exceptions par titre** (ex: Le Mans → Johnny Nicolas par défaut,
+sauf en MSMC où Etienne Azerad reste le RP).
 
-1. Créer un nouveau repo GitHub `emineo-campus-rp`, y déposer tous les
-   fichiers de ce dossier (structure telle quelle, avec le sous-dossier `api/`).
-2. Importer ce repo dans Vercel (comme pour n'importe quel PAC).
-3. Variables d'environnement à ajouter sur ce projet Vercel :
-   - `UPSTASH_REDIS_REST_URL` — **réutiliser la même valeur que sur n'importe
-     quel bloc existant** (ex: lumio-bc1). C'est la même base Redis, juste un
-     nouveau préfixe de clé (`campus-rp:data`), donc aucun risque de collision
-     avec les sessions étudiantes.
-   - `UPSTASH_REDIS_REST_TOKEN` — idem, copier depuis un bloc existant.
-   - `ADMIN_PASSWORD` — choisir un mot de passe pour la page `/` (admin).
-     N'importe quelle chaîne, à changer si besoin plus tard sans redéployer
-     (juste éditer la variable + redeploy, comme d'habitude).
-4. Redéployer une fois les variables ajoutées (Vercel → Deployments → Redeploy).
+## Mise à jour d'un déploiement existant
 
-## Vérifier que ça marche
+Remplace les 3 fichiers (`api/campus-rp.js`, `api/admin.js`, `index.html`)
+dans le repo GitHub `emineo-campus-rp` existant, puis redeploy sur Vercel.
+Aucune variable d'environnement supplémentaire n'est nécessaire.
 
-- `https://emineo-campus-rp.vercel.app/` → page d'admin, demande le mot de passe.
-- `https://emineo-campus-rp.vercel.app/api/campus-rp` → JSON public, doit
-  déjà contenir Paris / Nantes / Bordeaux / Le Mans au premier appel (auto-amorçage).
+**Rétrocompatibilité :** si des campus étaient déjà enregistrés dans
+l'ancien format (un seul RP par campus, sans distinction de titre), ils
+continuent de fonctionner tels quels — le nouveau code les lit
+normalement. Ils passent au nouveau format dès qu'on les édite une fois
+via la page `/`.
 
-## Si Vercel attribue un domaine différent
+## Nouveau déploiement (si pas encore fait)
 
-Les 22 fichiers consommateurs (18 `send-portfolio.js` + 4 portails) pointent
-en dur vers `https://emineo-campus-rp.vercel.app/api/campus-rp`. Si le nom de
-domaine réel diffère, il suffit de me donner l'URL exacte : c'est une seule
-constante (`CAMPUS_RP_HUB` ou `CAMPUS_RP_HUB_URL`) à changer dans chacun des
-22 fichiers, je repackage en une passe.
+1. Repo GitHub `emineo-campus-rp` avec tous les fichiers de ce dossier.
+2. Import Vercel, variables d'environnement :
+   - `UPSTASH_REDIS_REST_URL` — réutiliser la valeur d'un bloc existant.
+   - `UPSTASH_REDIS_REST_TOKEN` — idem.
+   - `ADMIN_PASSWORD` — mot de passe de la page `/`.
+3. Redeploy.
 
-## Ajouter / modifier un campus ensuite
+## Utiliser une exception par titre
 
-Tout se fait depuis la page `/` — aucun fichier à toucher, aucun redéploiement
-des 18 PAC ni des 4 portails. Le changement est visible dès le prochain
-chargement de portail ou envoi de portfolio.
+Sur la page `/`, en éditant un campus : sous « Exceptions par titre »,
+cocher le titre concerné (MSMC / CDRH / MMD / MDO), renseigner le ou les
+RP spécifiques à ce titre pour ce campus. Les titres non cochés utilisent
+le RP par défaut.
+
+## Cas Le Mans (à faire une fois le hub à jour)
+
+Éditer « Le Mans » :
+- RP par défaut : Johnny Nicolas — johnny.nicolas@isme.fr
+- Cocher MSMC, y indiquer : Etienne Azerad — etienne.azerad@cesacom.fr
+
+## Vérifier
+
+`https://emineo-campus-rp.vercel.app/api/campus-rp?titre=MSMC` doit
+renvoyer Etienne Azerad pour Le Mans.
+`https://emineo-campus-rp.vercel.app/api/campus-rp?titre=CDRH` (ou MMD,
+MDO, ou sans paramètre) doit renvoyer Johnny Nicolas pour Le Mans.

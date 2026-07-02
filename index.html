@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Campus / RP — PAC Éminéo</title>
+<style>
+  :root{
+    --abysse:#0B2B2D; --petrole:#134547; --menthe:#5DE298;
+    --givre:#E3FFF0; --saumon:#E89B77; --gris:#5A6B6C;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; min-height:100vh; background:var(--abysse);
+    font-family:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
+    color:#fff;
+  }
+  .wrap{max-width:920px;margin:0 auto;padding:40px 24px 80px;}
+  h1{font-size:22px;font-weight:700;margin:0 0 4px;}
+  .sub{color:var(--menthe);font-size:13px;opacity:.8;margin:0 0 32px;}
+  .card{
+    background:rgba(255,255,255,0.04);border:1px solid rgba(93,226,152,0.15);
+    border-radius:12px;padding:24px;margin-bottom:24px;
+  }
+  label{display:block;font-size:13px;color:var(--menthe);margin-bottom:6px;}
+  input{
+    width:100%;padding:11px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);
+    background:rgba(255,255,255,0.05);color:#fff;font-size:14px;font-family:inherit;outline:none;
+    margin-bottom:14px;
+  }
+  input:focus{border-color:var(--menthe);}
+  button{
+    font-family:inherit;font-size:14px;font-weight:600;border:none;border-radius:8px;
+    padding:10px 18px;cursor:pointer;transition:opacity .15s;
+  }
+  button:hover{opacity:.85;}
+  .btn-primary{background:var(--menthe);color:var(--abysse);}
+  .btn-ghost{background:transparent;color:var(--menthe);border:1px solid rgba(93,226,152,0.3);}
+  .btn-danger{background:transparent;color:var(--saumon);border:1px solid rgba(232,155,119,0.4);}
+  .btn-small{padding:6px 12px;font-size:12px;}
+  .rp-row{display:flex;gap:10px;margin-bottom:10px;align-items:center;}
+  .rp-row input{margin-bottom:0;}
+  table{width:100%;border-collapse:collapse;margin-top:8px;}
+  th,td{text-align:left;padding:10px 8px;font-size:13px;border-bottom:1px solid rgba(255,255,255,0.08);vertical-align:top;}
+  th{color:var(--menthe);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.5px;}
+  .rp-list{font-size:12.5px;color:rgba(255,255,255,0.75);line-height:1.6;}
+  .actions{display:flex;gap:8px;}
+  .err{color:var(--saumon);font-size:13px;margin-top:-6px;margin-bottom:14px;min-height:16px;}
+  .hint{font-size:12px;color:rgba(255,255,255,0.45);margin-top:24px;line-height:1.6;}
+  .hint code{background:rgba(255,255,255,0.08);padding:2px 6px;border-radius:4px;}
+  #gate{display:flex;align-items:center;justify-content:center;min-height:100vh;}
+  #gate .card{width:340px;}
+  .pill{display:inline-block;font-size:11px;padding:2px 8px;border-radius:100px;background:rgba(93,226,152,0.15);color:var(--menthe);margin-left:8px;}
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="card">
+    <h1>PAC Éminéo</h1>
+    <p class="sub">Gestion Campus / Responsables Pédagogiques</p>
+    <label for="pw">Mot de passe admin</label>
+    <input id="pw" type="password" onkeydown="if(event.key==='Enter')login()">
+    <div class="err" id="gate-err"></div>
+    <button class="btn-primary" style="width:100%" onclick="login()">Se connecter</button>
+  </div>
+</div>
+
+<div class="wrap" id="dash" style="display:none">
+  <h1>Campus / Responsables Pédagogiques<span class="pill">admin</span></h1>
+  <p class="sub">Chaque modification est immédiate — les 18 PAC et les 4 portails lisent cette table en direct, sans redéploiement.</p>
+
+  <div class="card">
+    <h2 style="font-size:15px;margin:0 0 16px;" id="form-title">Ajouter un campus</h2>
+    <input type="hidden" id="f-original-id">
+    <label for="f-label">Nom du campus</label>
+    <input id="f-label" placeholder="ex: Lyon">
+    <label>Responsable(s) pédagogique(s)</label>
+    <div id="rp-rows"></div>
+    <button class="btn-ghost btn-small" onclick="addRpRow()">+ Ajouter un RP</button>
+    <div class="err" id="form-err"></div>
+    <div class="actions" style="margin-top:16px">
+      <button class="btn-primary" onclick="saveCampus()">Enregistrer</button>
+      <button class="btn-ghost" id="cancel-edit" style="display:none" onclick="resetForm()">Annuler la modification</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 style="font-size:15px;margin:0 0 8px;">Campus actuels</h2>
+    <table>
+      <thead><tr><th>Campus</th><th>RP (CC portfolio)</th><th></th></tr></thead>
+      <tbody id="campus-tbody"></tbody>
+    </table>
+  </div>
+
+  <div class="hint">
+    Endpoint public (lu par les 18 PAC + 4 portails) : <code id="public-url"></code><br>
+    Toute nouvelle entrée est disponible immédiatement, sans redéploiement d'aucun repo.
+  </div>
+</div>
+
+<script>
+let PASSWORD = '';
+let CAMPUSES = [];
+
+function login(){
+  PASSWORD = document.getElementById('pw').value;
+  fetch('/api/admin', { headers: { 'x-admin-password': PASSWORD } })
+    .then(r => {
+      if (!r.ok) throw new Error(r.status === 401 ? 'Mot de passe incorrect.' : 'Erreur serveur (' + r.status + ')');
+      return r.json();
+    })
+    .then(data => {
+      sessionStorage.setItem('campusrp_pw', PASSWORD);
+      CAMPUSES = data.campuses || [];
+      document.getElementById('gate').style.display = 'none';
+      document.getElementById('dash').style.display = 'block';
+      document.getElementById('public-url').textContent = location.origin + '/api/campus-rp';
+      renderTable();
+      resetForm();
+    })
+    .catch(err => { document.getElementById('gate-err').textContent = err.message; });
+}
+
+// Reprise de session si le mot de passe est déjà en mémoire d'onglet
+(function tryAutoLogin(){
+  const saved = sessionStorage.getItem('campusrp_pw');
+  if (saved) { document.getElementById('pw').value = saved; login(); }
+})();
+
+function renderTable(){
+  const tbody = document.getElementById('campus-tbody');
+  tbody.innerHTML = '';
+  CAMPUSES.slice().sort((a,b) => a.label.localeCompare(b.label)).forEach(c => {
+    const tr = document.createElement('tr');
+    const rpHtml = (c.rp || []).map(p => escapeHtml(p.nom || '(sans nom)') + ' — ' + escapeHtml(p.email)).join('<br>');
+    tr.innerHTML =
+      '<td><strong>' + escapeHtml(c.label) + '</strong><br><span style="opacity:.4;font-size:11px">' + escapeHtml(c.id) + '</span></td>' +
+      '<td class="rp-list">' + rpHtml + '</td>' +
+      '<td class="actions">' +
+        '<button class="btn-ghost btn-small" onclick="editCampus(\'' + c.id + '\')">Éditer</button>' +
+        '<button class="btn-danger btn-small" onclick="deleteCampus(\'' + c.id + '\')">Supprimer</button>' +
+      '</td>';
+    tbody.appendChild(tr);
+  });
+  if (CAMPUSES.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="3" style="opacity:.5">Aucun campus pour le moment.</td></tr>';
+  }
+}
+
+function escapeHtml(s){
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function addRpRow(nom, email){
+  const wrap = document.getElementById('rp-rows');
+  const row = document.createElement('div');
+  row.className = 'rp-row';
+  row.innerHTML =
+    '<input placeholder="Nom" class="rp-nom" style="flex:1" value="' + escapeHtml(nom || '') + '">' +
+    '<input placeholder="email@domaine.fr" class="rp-email" style="flex:1.3" value="' + escapeHtml(email || '') + '">' +
+    '<button class="btn-danger btn-small" onclick="this.parentElement.remove()">✕</button>';
+  wrap.appendChild(row);
+}
+
+function resetForm(){
+  document.getElementById('form-title').textContent = 'Ajouter un campus';
+  document.getElementById('f-original-id').value = '';
+  document.getElementById('f-label').value = '';
+  document.getElementById('rp-rows').innerHTML = '';
+  document.getElementById('form-err').textContent = '';
+  document.getElementById('cancel-edit').style.display = 'none';
+  addRpRow();
+}
+
+function editCampus(id){
+  const c = CAMPUSES.find(x => x.id === id);
+  if (!c) return;
+  document.getElementById('form-title').textContent = 'Modifier « ' + c.label + ' »';
+  document.getElementById('f-original-id').value = c.id;
+  document.getElementById('f-label').value = c.label;
+  document.getElementById('rp-rows').innerHTML = '';
+  (c.rp || []).forEach(p => addRpRow(p.nom, p.email));
+  if ((c.rp || []).length === 0) addRpRow();
+  document.getElementById('cancel-edit').style.display = 'inline-block';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function saveCampus(){
+  const label = document.getElementById('f-label').value.trim();
+  const originalId = document.getElementById('f-original-id').value;
+  const rp = Array.from(document.querySelectorAll('.rp-row')).map(row => ({
+    nom: row.querySelector('.rp-nom').value.trim(),
+    email: row.querySelector('.rp-email').value.trim(),
+  })).filter(p => p.email);
+
+  const errEl = document.getElementById('form-err');
+  errEl.textContent = '';
+  if (!label) { errEl.textContent = 'Le nom du campus est requis.'; return; }
+  if (rp.length === 0) { errEl.textContent = 'Au moins un RP (avec email) est requis.'; return; }
+
+  fetch('/api/admin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-admin-password': PASSWORD },
+    body: JSON.stringify({ id: originalId || label, label, rp }),
+  })
+    .then(r => r.json().then(data => { if (!r.ok) throw new Error(data.error || 'Erreur'); return data; }))
+    .then(data => { CAMPUSES = data.campuses; renderTable(); resetForm(); })
+    .catch(err => { errEl.textContent = err.message; });
+}
+
+function deleteCampus(id){
+  const c = CAMPUSES.find(x => x.id === id);
+  if (!confirm('Supprimer le campus « ' + (c ? c.label : id) + ' » ? Les étudiants de ce campus n\'auront alors plus de RP en copie.')) return;
+
+  fetch('/api/admin?id=' + encodeURIComponent(id), {
+    method: 'DELETE',
+    headers: { 'x-admin-password': PASSWORD },
+  })
+    .then(r => r.json().then(data => { if (!r.ok) throw new Error(data.error || 'Erreur'); return data; }))
+    .then(data => { CAMPUSES = data.campuses; renderTable(); })
+    .catch(err => alert(err.message));
+}
+</script>
+</body>
+</html>

@@ -89,7 +89,11 @@ export default async function handler(req, res) {
   const titre = (req.query && req.query.titre) ? String(req.query.titre).toUpperCase() : null;
 
   const resolveAndReply = (rawCampuses) => {
-    const campuses = (rawCampuses || []).map(normalizeCampus).map(c => resolveForTitre(c, titre));
+    let campuses = (rawCampuses || []).map(normalizeCampus).map(c => resolveForTitre(c, titre));
+    // Un campus sans RP pour le titre demandé n'est pas proposé — permet d'ouvrir
+    // un campus sur un seul titre (rp_default vide + override sur ce titre uniquement).
+    // Les appels sans ?titre (portails, qui n'ont besoin que de id+label) voient tout.
+    if (titre) campuses = campuses.filter(c => Array.isArray(c.rp) && c.rp.length > 0);
     return res.status(200).json({ campuses });
   };
 
